@@ -1,0 +1,22 @@
+FROM golang:1.23-alpine
+
+# Install Node.js 22, build tools, and dev utilities
+RUN apk add --no-cache nodejs npm git curl bash
+
+# Install air for Go hot reload
+RUN go install github.com/air-verse/air@latest
+
+# Install sqlc
+RUN go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+
+# Install goose
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
+WORKDIR /app
+
+# Copy go.mod first for dependency caching
+COPY go.mod ./
+RUN go mod download 2>/dev/null || true
+
+# Default command: start both Go (air) and SvelteKit dev server
+CMD ["bash", "-c", "cd /app/web && npm install && npm run dev -- --host 0.0.0.0 --port 5173 & cd /app && air -c .air.toml"]

@@ -1,0 +1,48 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    environment:
+      - DATABASE_URL=postgres://memento:memento@db:5432/memento?sslmode=disable
+      - LOG_LEVEL=debug
+      - TZ=Asia/Tokyo
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - node-modules:/app/web/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    tty: true
+    stdin_open: true
+
+  db:
+    image: postgres:17-alpine
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: memento
+      POSTGRES_PASSWORD: memento
+      POSTGRES_DB: memento
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memento"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata-dev:
+  go-mod-cache:
+  go-build-cache:
+  node-modules:

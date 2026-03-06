@@ -1,0 +1,32 @@
+# Go
+/memento
+*.exe
+*.test
+*.out
+
+# Node / SvelteKit
+web/node_modules/
+web/.svelte-kit/
+web/build/
+web/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+pgdata/
+attachments/
+
+# Environment
+.env
+*.local
+
+# Go build/test cache
+/vendor/
