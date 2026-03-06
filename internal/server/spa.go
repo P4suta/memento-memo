@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/sakashita/memento-memo/web"
@@ -33,15 +36,28 @@ func spaHandler() http.Handler {
 		}
 
 		// Try to serve the file directly
-		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
+		p := r.URL.Path
+		if p == "/" {
+			p = "/index.html"
 		}
 
 		// Check if file exists
-		f, err := fs.Stat(distFS, strings.TrimPrefix(path, "/"))
+		cleanPath := strings.TrimPrefix(p, "/")
+		f, err := fs.Stat(distFS, cleanPath)
 		if err == nil && !f.IsDir() {
-			fileServer.ServeHTTP(w, r)
+			// For non-HTML static assets (JS, CSS, etc.), serve directly
+			ext := path.Ext(cleanPath)
+			if ext != ".html" {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			// For HTML files, read and inject nonce
+			html, err := distFS.(fs.ReadFileFS).ReadFile(cleanPath)
+			if err != nil {
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+			serveHTMLWithNonce(w, r, html)
 			return
 		}
 
@@ -53,7 +69,19 @@ func spaHandler() http.Handler {
 			}
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(indexFile)
+		serveHTMLWithNonce(w, r, indexFile)
 	})
+}
+
+func injectNonce(html []byte, nonce string) []byte {
+	return bytes.ReplaceAll(html, []byte("<script>"), []byte(fmt.Sprintf(`<script nonce="%s">`, nonce)))
+}
+
+func serveHTMLWithNonce(w http.ResponseWriter, r *http.Request, html []byte) {
+	nonce := GetCSPNonce(r.Context())
+	if nonce != "" {
+		html = injectNonce(html, nonce)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(html)
 }

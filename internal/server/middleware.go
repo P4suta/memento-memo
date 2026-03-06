@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -14,6 +16,7 @@ import (
 type contextKey string
 
 const requestIDKey contextKey = "request_id"
+const cspNonceKey contextKey = "csp_nonce"
 
 // Chain applies middlewares in order (outermost first).
 func Chain(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
@@ -78,17 +81,33 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// SecurityHeaders adds standard security headers.
+// SecurityHeaders adds standard security headers with a per-request CSP nonce.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, 16)
+		rand.Read(b)
+		nonce := base64.StdEncoding.EncodeToString(b)
+
+		ctx := context.WithValue(r.Context(), cspNonceKey, nonce)
+
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "0")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;")
-		next.ServeHTTP(w, r)
+		w.Header().Set("Content-Security-Policy", fmt.Sprintf(
+			"default-src 'self'; script-src 'self' 'nonce-%s'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' ws: wss:;",
+			nonce,
+		))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// GetCSPNonce retrieves the CSP nonce from the request context.
+func GetCSPNonce(ctx context.Context) string {
+	if v, ok := ctx.Value(cspNonceKey).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // MaxBodySize limits the request body size.
